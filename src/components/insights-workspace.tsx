@@ -61,10 +61,10 @@ export function InsightsWorkspace({ subscriptions, isAdmin }: InsightsWorkspaceP
     renewingIn30,
   });
 
-  function exportCsv() {
-    const rows: string[][] = [
+  function buildExportRows() {
+    return [
       ["Subscription Insights Report"],
-      ["Generated at", new Date().toLocaleString("en-IN")],
+      ["Generated at", new Date().toLocaleString("en-US")],
       ["Report preset", preset],
       ["Status filter", statusFilter],
       ["Team filter", teamFilter],
@@ -74,10 +74,10 @@ export function InsightsWorkspace({ subscriptions, isAdmin }: InsightsWorkspaceP
       ["Total subscriptions", String(filteredSubscriptions.length)],
       ["Active subscriptions", String(activeSubscriptions.length)],
       ["Cancelled subscriptions", String(cancelledCount)],
-      ["Monthly spend", String(monthlySpend)],
-      ["Annualized spend", String(annualSpend)],
+      ["Monthly spend", formatCurrency(monthlySpend)],
+      ["Annualized spend", formatCurrency(annualSpend)],
       ["Renewing in 30 days", String(renewingIn30)],
-      ["Average monthly spend", String(avgMonthlySpend)],
+      ["Average monthly spend", formatCurrency(avgMonthlySpend)],
       [],
       ["Detailed report"],
       ["Metric", "Value", "Detail"],
@@ -85,15 +85,15 @@ export function InsightsWorkspace({ subscriptions, isAdmin }: InsightsWorkspaceP
       [],
       ["Spend by team"],
       ["Team", "Monthly equivalent"],
-      ...spendByTeam.map((item) => [item.label, String(item.value)]),
+      ...spendByTeam.map((item) => [item.label, formatCurrency(item.value)]),
       [],
       ["Spend by user"],
       ["User", "Monthly equivalent"],
-      ...spendByOwner.map((item) => [item.label, String(item.value)]),
+      ...spendByOwner.map((item) => [item.label, formatCurrency(item.value)]),
       [],
       ["Spend by service"],
       ["Service", "Monthly equivalent"],
-      ...spendByService.map((item) => [item.label, String(item.value)]),
+      ...spendByService.map((item) => [item.label, formatCurrency(item.value)]),
       [],
       ["Renewal forecast"],
       ["Month", "Renewal count"],
@@ -101,28 +101,38 @@ export function InsightsWorkspace({ subscriptions, isAdmin }: InsightsWorkspaceP
       [],
       ["Upcoming renewals"],
       ["Name", "Renewal date", "Team", "Owner", "Monthly equivalent"],
-      ...upcomingRenewals.map((item) => [item.name, item.renewalDate, item.team, item.owner, String(toMonthlyCost(item))]),
+      ...upcomingRenewals.map((item) => [item.name, item.renewalDate, item.team, item.owner, formatCurrency(toMonthlyCost(item))]),
       [],
       ["Cost concentration"],
       ["Name", "Team", "Owner", "Monthly equivalent", "Annual equivalent"],
-      ...highCostSubscriptions.map((item) => [item.name, item.team, item.owner, String(toMonthlyCost(item)), String(toAnnualCost(item))]),
+      ...highCostSubscriptions.map((item) => [item.name, item.team, item.owner, formatCurrency(toMonthlyCost(item)), formatCurrency(toAnnualCost(item))]),
       [],
       ["Subscription detail"],
       ["Name", "Cost", "Billing cycle", "Monthly equivalent", "Annual equivalent", "Renewal date", "Team", "Owner", "Status", "Notes"],
       ...filteredSubscriptions.map((item) => [
-      item.name,
-      String(item.cost),
-      item.billingCycle,
-      String(toMonthlyCost(item)),
-      String(toAnnualCost(item)),
-      item.renewalDate,
-      item.team,
-      item.owner,
-      item.status,
-      item.notes,
+        item.name,
+        formatCurrency(item.cost),
+        item.billingCycle,
+        formatCurrency(toMonthlyCost(item)),
+        formatCurrency(toAnnualCost(item)),
+        item.renewalDate,
+        item.team,
+        item.owner,
+        item.status,
+        item.notes,
       ]),
     ];
+  }
 
+  function exportExcel() {
+    const rows = buildExportRows();
+    const html = `<!doctype html><html><head><meta charset="utf-8" /></head><body>${toHtmlTable(rows)}</body></html>`;
+    downloadFile("subscription-insights.xls", html, "application/vnd.ms-excel");
+    toast({ kind: "success", title: "Excel exported" });
+  }
+
+  function exportCsv() {
+    const rows = buildExportRows();
     downloadFile("subscription-insights.csv", toCsv(rows), "text/csv;charset=utf-8");
     toast({ kind: "success", title: "CSV exported" });
   }
@@ -147,7 +157,14 @@ export function InsightsWorkspace({ subscriptions, isAdmin }: InsightsWorkspaceP
     toast({ kind: "success", title: "JSON exported" });
   }
 
-  function printReport() {
+  function exportPdf() {
+    const originalTitle = document.title;
+    const restoreTitle = () => {
+      document.title = originalTitle;
+      window.removeEventListener("afterprint", restoreTitle);
+    };
+    document.title = "Subscription Insights Report";
+    window.addEventListener("afterprint", restoreTitle);
     window.print();
   }
 
@@ -163,9 +180,10 @@ export function InsightsWorkspace({ subscriptions, isAdmin }: InsightsWorkspaceP
             <SelectField label="Report" value={preset} onChange={(value) => setPreset(value as ReportPreset)} options={["executive", "renewals", "cost"]} />
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <ActionButton label="Export Excel" onClick={exportExcel} />
             <ActionButton label="Export CSV" onClick={exportCsv} />
             <ActionButton label="Export JSON" onClick={exportJson} />
-            <ActionButton label="Print report" onClick={printReport} dark />
+            <ActionButton label="Export PDF" onClick={exportPdf} dark />
           </div>
         </div>
       </section>
@@ -359,7 +377,7 @@ function groupRenewalsByMonth(subscriptions: Subscription[]) {
 
   subscriptions.forEach((item) => {
     const date = new Date(item.renewalDate);
-    const label = Number.isNaN(date.getTime()) ? "Unknown" : date.toLocaleDateString("en-IN", { month: "short", year: "numeric" });
+    const label = Number.isNaN(date.getTime()) ? "Unknown" : date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
     totals.set(label, (totals.get(label) ?? 0) + 1);
   });
 
@@ -622,7 +640,7 @@ function PrintReport({
       <header className="border-b border-slate-300 pb-4">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Subscription Hub</p>
         <h1 className="mt-2 text-2xl font-semibold text-slate-950">Subscription Insights Report</h1>
-        <p className="mt-2 text-sm text-slate-600">Generated {new Date().toLocaleString("en-IN")}</p>
+        <p className="mt-2 text-sm text-slate-600">Generated {new Date().toLocaleString("en-US")}</p>
         <div className="mt-4 grid grid-cols-4 gap-2 text-xs">
           <PrintMeta label="Report" value={preset} />
           <PrintMeta label="Status" value={statusFilter} />
@@ -789,6 +807,27 @@ function toCsv(rows: string[][]) {
         .join(",")
     )
     .join("\n");
+}
+
+function toHtmlTable(rows: string[][]) {
+  const body = rows
+    .map((row) => {
+      const cells = row.length ? row : [""];
+      const tds = cells
+        .map((cell) => `<td>${escapeHtml(String(cell ?? ""))}</td>`)
+        .join("");
+      return `<tr>${tds}</tr>`;
+    })
+    .join("");
+  return `<table>${body}</table>`;
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }
 
 function downloadFile(filename: string, content: string, type: string) {

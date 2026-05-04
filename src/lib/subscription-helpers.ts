@@ -64,9 +64,9 @@ export function toAnnualCost(subscription: Subscription) {
 }
 
 export function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-IN", {
+  return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: "INR",
+    currency: "USD",
     maximumFractionDigits: 2,
   }).format(value);
 }
