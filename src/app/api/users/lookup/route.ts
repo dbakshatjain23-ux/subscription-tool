@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { verifyRequestSession } from "@/lib/auth";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { extractUserIdFromRequest, verifyAdminPermission } from "@/lib/permissions";
+import { getSuperAdminId } from "@/lib/super-admin";
 
 export async function GET(request: NextRequest) {
   if (!(await verifyRequestSession(request))) {
@@ -49,9 +50,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unable to load users." }, { status: 500 });
   }
 
+  const superAdminId = await getSuperAdminId();
+  const users = (data ?? []).filter((user) => user.id !== superAdminId);
+
   return NextResponse.json({
     isAdmin: true,
-    users: data ?? [],
+    users,
     currentUser,
   });
 }

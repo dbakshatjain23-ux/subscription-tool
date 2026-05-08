@@ -3,6 +3,8 @@ import type { NextRequest } from "next/server";
 import { verifyRequestSession } from "@/lib/auth";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { extractUserIdFromRequest, canAccessSubscription, verifyAdminPermission } from "@/lib/permissions";
+import type { BillingCycle, PaymentStatus } from "@/lib/types";
+import { isPaymentStatus } from "@/lib/payment-statuses";
 import { sortSubscriptionsByRenewalDate } from "@/lib/subscription-helpers";
 import { mapDbSubscription, toDbSubscriptionInput, validateRenewalDate, validateSubscriptionInput } from "@/lib/data";
 import { withCache, invalidateCache, getCacheKey } from "@/lib/cache";
@@ -22,11 +24,15 @@ function getSubscriptionDbErrorMessage(
   }
 
   if (error.code === "23514" && rawMessage.includes("billingcycle")) {
-    return "Billing cycle must be monthly or yearly.";
+    return "Billing cycle must be monthly, quarterly, or yearly.";
   }
 
   if (error.code === "23514" && rawMessage.includes("status")) {
     return "Status must be active or cancelled.";
+  }
+
+  if (error.code === "23514" && rawMessage.includes("payment_status")) {
+    return "Payment status must be paid, due, unpaid, or skipped.";
   }
 
   if (error.code === "23503") {
@@ -153,11 +159,15 @@ export async function POST(request: NextRequest) {
   const validation = validateSubscriptionInput({
     name: String(body?.name ?? ""),
     cost: Number(body?.cost),
-    billingCycle: String(body?.billingCycle ?? "") as "monthly" | "yearly",
+    billingCycle: String(body?.billingCycle ?? "") as BillingCycle,
     renewalDate: String(body?.renewalDate ?? ""),
     team: String(body?.team ?? ""),
     owner: ownerAssignment.owner,
     status: String(body?.status ?? "") as "active" | "cancelled",
+    paymentStatus: adminCheck.ok && isPaymentStatus(String(body?.paymentStatus ?? ""))
+      ? String(body?.paymentStatus) as PaymentStatus
+      : "paid",
+    autoRenew: adminCheck.ok && body?.autoRenew !== undefined ? Boolean(body.autoRenew) : true,
     notes,
   });
 
@@ -200,6 +210,8 @@ export async function PUT(request: NextRequest) {
     team?: string;
     owner?: string;
     status?: string;
+    paymentStatus?: string;
+    autoRenew?: boolean;
     notes?: string;
     ownerUserId?: string;
   } | null;
@@ -254,6 +266,19 @@ export async function PUT(request: NextRequest) {
     updates.owner = body.owner;
   }
   if (body.status) updates.status = body.status;
+  if (body.paymentStatus !== undefined || body.autoRenew !== undefined) {
+    if (!adminCheck.ok) {
+      return NextResponse.json({ error: "Only admins can update renewal payment settings." }, { status: 403 });
+    }
+  }
+  if (body.paymentStatus !== undefined) {
+    const paymentStatus = String(body.paymentStatus).trim().toLowerCase();
+    if (!isPaymentStatus(paymentStatus)) {
+      return NextResponse.json({ error: "Payment status must be paid, due, unpaid, or skipped." }, { status: 400 });
+    }
+    updates.payment_status = paymentStatus;
+  }
+  if (body.autoRenew !== undefined) updates.auto_renew = Boolean(body.autoRenew);
   if (body.notes !== undefined) {
     updates.notes = String(body.notes ?? "").trim();
   }

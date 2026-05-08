@@ -10,6 +10,7 @@ type UserRow = {
   full_name: string | null;
   role: "admin" | "user";
   is_active: boolean | null;
+  is_super_admin?: boolean;
   created_at?: string;
 };
 
@@ -152,12 +153,18 @@ export function UserManagementPanel() {
   }
 
   async function saveEdit(userId: string) {
-    const updated = await updateUser(userId, {
+    const user = users.find((item) => item.id === userId);
+    const updates: Partial<Pick<UserRow, "is_active" | "full_name" | "email" | "role">> = {
       full_name: nameDraft.trim(),
-      email: emailDraft.trim(),
-      is_active: statusDraft === "active",
-      role: roleDraft,
-    });
+    };
+
+    if (!user?.is_super_admin) {
+      updates.email = emailDraft.trim();
+      updates.is_active = statusDraft === "active";
+      updates.role = roleDraft;
+    }
+
+    const updated = await updateUser(userId, updates);
     if (updated) {
       closeEdit();
     }
@@ -189,6 +196,9 @@ export function UserManagementPanel() {
     const inactive = users.filter((user) => user.is_active === false).length;
     return { total, active, inactive };
   }, [users]);
+
+  const editingUser = users.find((user) => user.id === editingUserId);
+  const editingSuperAdmin = Boolean(editingUser?.is_super_admin);
 
   return (
     <div className="grid gap-6">
@@ -254,7 +264,12 @@ export function UserManagementPanel() {
                 ) : filteredUsers.length ? (
                   filteredUsers.map((user) => (
                     <tr key={user.id}>
-                      <Td>{user.full_name || "Unnamed user"}</Td>
+                      <Td>
+                        <div className="flex flex-col gap-1">
+                          <span>{user.full_name || "Unnamed user"}</span>
+                          {user.is_super_admin ? <span className="text-xs font-medium text-slate-500">Super admin</span> : null}
+                        </div>
+                      </Td>
                       <Td>{user.email}</Td>
                       <Td>
                         <span className="capitalize">{user.role ?? "user"}</span>
@@ -266,7 +281,7 @@ export function UserManagementPanel() {
                           className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ring-1 transition ${
                             user.is_active ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : "bg-slate-100 text-slate-600 ring-slate-200"
                           }`}
-                          disabled={savingUserId === user.id}
+                          disabled={savingUserId === user.id || user.is_super_admin}
                         >
                           {user.is_active ? "Active" : "Inactive"}
                         </button>
@@ -283,8 +298,9 @@ export function UserManagementPanel() {
                           <button
                             type="button"
                             onClick={() => void deleteUser(user.id)}
-                            className="font-medium text-rose-600"
-                            disabled={deletingUserId === user.id}
+                            className={user.is_super_admin ? "font-medium text-slate-400" : "font-medium text-rose-600"}
+                            disabled={deletingUserId === user.id || user.is_super_admin}
+                            title={user.is_super_admin ? "Super admin cannot be deleted" : undefined}
                           >
                             {deletingUserId === user.id ? "Deleting..." : "Delete"}
                           </button>
@@ -335,6 +351,7 @@ export function UserManagementPanel() {
                   onChange={(event) => setEmailDraft(event.target.value)}
                   className={inputClass}
                   placeholder="name@company.com"
+                  disabled={editingSuperAdmin}
                 />
               </label>
               <label className="block space-y-2 text-sm font-medium text-slate-700">
@@ -343,6 +360,7 @@ export function UserManagementPanel() {
                   value={statusDraft}
                   onChange={(event) => setStatusDraft(event.target.value as "active" | "inactive")}
                   className={selectClass}
+                  disabled={editingSuperAdmin}
                 >
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
@@ -354,6 +372,7 @@ export function UserManagementPanel() {
                   value={roleDraft}
                   onChange={(event) => setRoleDraft(event.target.value as "admin" | "user")}
                   className={selectClass}
+                  disabled={editingSuperAdmin}
                 >
                   <option value="user">User</option>
                   <option value="admin">Admin</option>

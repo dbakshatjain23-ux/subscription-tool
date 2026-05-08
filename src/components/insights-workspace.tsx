@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { Subscription } from "@/lib/types";
+import { billingCycleOptions } from "@/lib/billing-cycles";
 import { formatCurrency, isRenewingWithinDays, toAnnualCost, toMonthlyCost } from "@/lib/subscription-helpers";
 import { useToast } from "@/components/toast-provider";
 
@@ -38,8 +39,11 @@ export function InsightsWorkspace({ subscriptions, isAdmin }: InsightsWorkspaceP
   const monthlySpend = activeSubscriptions.reduce((total, item) => total + toMonthlyCost(item), 0);
   const annualSpend = activeSubscriptions.reduce((total, item) => total + toAnnualCost(item), 0);
   const cancelledCount = filteredSubscriptions.filter((item) => item.status === "cancelled").length;
-  const yearlyCount = activeSubscriptions.filter((item) => item.billingCycle === "yearly").length;
-  const monthlyCount = activeSubscriptions.filter((item) => item.billingCycle === "monthly").length;
+  const billingMix = billingCycleOptions.map((option) => ({
+    label: option.label,
+    value: activeSubscriptions.filter((item) => item.billingCycle === option.value).length,
+  }));
+  const billingMixTotal = billingMix.reduce((total, item) => total + item.value, 0);
   const renewingIn30 = activeSubscriptions.filter((item) => isRenewingWithinDays(item.renewalDate, 30)).length;
   const avgMonthlySpend = activeSubscriptions.length ? monthlySpend / activeSubscriptions.length : 0;
   const spendByTeam = groupSpend(activeSubscriptions, (item) => item.team);
@@ -211,13 +215,10 @@ export function InsightsWorkspace({ subscriptions, isAdmin }: InsightsWorkspaceP
           </div>
         </Panel>
 
-        <Panel title="Billing mix" description="Monthly and yearly active subscriptions.">
+        <Panel title="Billing mix" description="Active subscriptions by billing cycle.">
           <DonutChart
-            data={[
-              { label: "Monthly", value: monthlyCount },
-              { label: "Yearly", value: yearlyCount },
-            ]}
-            center={`${monthlyCount + yearlyCount}`}
+            data={billingMix}
+            center={`${billingMixTotal}`}
             suffix="plans"
           />
         </Panel>

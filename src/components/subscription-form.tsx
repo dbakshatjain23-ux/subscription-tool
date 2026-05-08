@@ -3,20 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useToast } from "@/components/toast-provider";
+import { billingCycleOptions } from "@/lib/billing-cycles";
+import { paymentStatusOptions } from "@/lib/payment-statuses";
 import { fetchWithClientCache } from "@/lib/client-cache";
 import type { Subscription } from "@/lib/types";
-
-const defaultForm = {
-  name: "",
-  cost: "",
-  billingCycle: "monthly",
-  renewalDate: "",
-  team: "",
-  owner: "",
-  ownerUserId: "",
-  status: "active",
-  notes: "",
-};
 
 function getTodayDateString() {
   const today = new Date();
@@ -26,9 +16,27 @@ function getTodayDateString() {
   return `${year}-${month}-${day}`;
 }
 
+function createDefaultForm() {
+  return {
+    name: "",
+    cost: "",
+    billingCycle: "monthly",
+    renewalDate: getTodayDateString(),
+    team: "",
+    owner: "",
+    ownerUserId: "",
+    status: "active",
+    paymentStatus: "paid",
+    autoRenew: true,
+    notes: "",
+  };
+}
+
+type SubscriptionFormState = ReturnType<typeof createDefaultForm>;
+
 function createFormState(subscription?: Subscription | null) {
   if (!subscription) {
-    return defaultForm;
+    return createDefaultForm();
   }
 
   return {
@@ -40,6 +48,8 @@ function createFormState(subscription?: Subscription | null) {
     owner: subscription.owner,
     ownerUserId: subscription.ownerUserId ?? "",
     status: subscription.status,
+    paymentStatus: subscription.paymentStatus,
+    autoRenew: subscription.autoRenew,
     notes: subscription.notes,
   };
 }
@@ -73,7 +83,7 @@ export function SubscriptionForm({ subscription = null, onSuccess, onCancel, red
   const teamControlRef = useRef<HTMLDivElement | null>(null);
   const minRenewalDate = useMemo(() => getTodayDateString(), []);
 
-  function updateField(field: keyof typeof defaultForm, value: string) {
+  function updateField(field: keyof SubscriptionFormState, value: string | boolean) {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
@@ -130,17 +140,18 @@ export function SubscriptionForm({ subscription = null, onSuccess, onCancel, red
         setIsAdmin(isAdminUser);
         setOwnerOptions(options);
 
-        if (subscription && !form.ownerUserId) {
-          const matchingOwner = options.find((option) => option.label === subscription.owner);
+        if (subscription) {
+          const matchingOwner = options.find((option) => option.value === subscription.ownerUserId || option.label === subscription.owner);
           if (matchingOwner) {
-            setForm((current) => ({ ...current, ownerUserId: matchingOwner.value }));
+            setForm((current) => ({ ...current, owner: matchingOwner.label, ownerUserId: matchingOwner.value }));
           }
         }
 
-        if (!subscription && !form.owner) {
-          const defaultOwner = payload.currentUser?.full_name?.trim() || payload.currentUser?.email || "";
-          if (defaultOwner) {
-            setForm((current) => ({ ...current, owner: defaultOwner, ownerUserId: payload.currentUser?.id ?? "" }));
+        if (!subscription) {
+          const currentUserOption = options.find((option) => option.value && option.value === payload.currentUser?.id);
+          const defaultOption = currentUserOption ?? (isAdminUser ? options[0] : personOptions[0]);
+          if (defaultOption) {
+            setForm((current) => current.owner ? current : { ...current, owner: defaultOption.label, ownerUserId: defaultOption.value });
           }
         }
       } catch (err) {
@@ -161,7 +172,7 @@ export function SubscriptionForm({ subscription = null, onSuccess, onCancel, red
     return () => {
       active = false;
     };
-  }, [form.owner, form.ownerUserId, subscription]);
+  }, [subscription]);
 
   useEffect(() => {
     let active = true;
@@ -295,7 +306,7 @@ export function SubscriptionForm({ subscription = null, onSuccess, onCancel, red
       setSuccess(successMessage);
       toast({ kind: "success", title: subscription ? "Subscription updated" : "Subscription added" });
       if (!subscription) {
-        setForm(defaultForm);
+        setForm(createDefaultForm());
       }
       onSuccess?.();
       if (redirectOnSuccess) {
@@ -322,8 +333,11 @@ export function SubscriptionForm({ subscription = null, onSuccess, onCancel, red
         </Field>
         <Field label="Billing Cycle" required>
           <select value={form.billingCycle} onChange={(event) => updateField("billingCycle", event.target.value)} required className={inputClass}>
-            <option value="monthly">Monthly</option>
-            <option value="yearly">Yearly</option>
+            {billingCycleOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
         </Field>
         <Field label="Renewal Date" required>
@@ -393,7 +407,7 @@ export function SubscriptionForm({ subscription = null, onSuccess, onCancel, red
               disabled={ownersLoading}
             >
               <span className={form.owner ? "text-slate-950" : "text-slate-400"}>{selectedOwnerLabel}</span>
-              <span className="ml-4 text-slate-400">▾</span>
+              <span className="ml-4 text-slate-400">v</span>
             </button>
 
             {ownerOpen ? (
@@ -445,6 +459,35 @@ export function SubscriptionForm({ subscription = null, onSuccess, onCancel, red
             <option value="cancelled">Cancelled</option>
           </select>
         </Field>
+        {isAdmin ? (
+          <>
+            <Field label="Payment Status" required>
+              <select value={form.paymentStatus} onChange={(event) => updateField("paymentStatus", event.target.value)} required className={inputClass}>
+                {paymentStatusOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Auto Renew">
+              <button
+                type="button"
+                onClick={() => updateField("autoRenew", !form.autoRenew)}
+                className={`flex h-11 w-full items-center justify-between rounded-xl border px-4 text-sm font-medium transition ${
+                  form.autoRenew
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : "border-slate-200 bg-white text-slate-700"
+                }`}
+              >
+                <span>{form.autoRenew ? "Enabled" : "Disabled"}</span>
+                <span className={`h-5 w-9 rounded-full p-0.5 transition ${form.autoRenew ? "bg-emerald-600" : "bg-slate-300"}`}>
+                  <span className={`block h-4 w-4 rounded-full bg-white transition ${form.autoRenew ? "translate-x-4" : ""}`} />
+                </span>
+              </button>
+            </Field>
+          </>
+        ) : null}
         <Field label="Notes">
           <input value={form.notes} onChange={(event) => updateField("notes", event.target.value)} className={inputClass} />
         </Field>
@@ -490,4 +533,4 @@ function Field({ label, required, children }: { label: string; required?: boolea
 }
 
 const inputClass =
-  "h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
+  "h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:bg-slate-50 disabled:text-slate-500";

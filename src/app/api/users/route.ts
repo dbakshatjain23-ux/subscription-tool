@@ -5,6 +5,11 @@ import { getSupabaseAdminClient } from "@/lib/supabase";
 import { extractUserIdFromRequest, verifyAdminPermission } from "@/lib/permissions";
 import { invalidateCache, getCacheKey } from "@/lib/cache";
 import { writeAuditLog } from "@/lib/audit";
+import { getSuperAdminId, isSuperAdminProfile } from "@/lib/super-admin";
+
+function markSuperAdminRows<T extends { id: string }>(rows: T[], superAdminId: string | null) {
+  return rows.map((row) => ({ ...row, is_super_admin: Boolean(superAdminId && row.id === superAdminId) }));
+}
 
 // Create a new user (admin only)
 export async function POST(request: NextRequest) {
@@ -121,7 +126,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Failed to fetch users." }, { status: 500 });
   }
 
-  return NextResponse.json({ users: data || [] });
+  const superAdminId = await getSuperAdminId();
+
+  return NextResponse.json({ users: markSuperAdminRows(data || [], superAdminId) });
 }
 
 // Update user role (admin only)
@@ -162,6 +169,17 @@ export async function PATCH(request: NextRequest) {
     .select("*")
     .eq("id", body.user_id)
     .single();
+
+  if (!previousUser) {
+    return NextResponse.json({ error: "User not found." }, { status: 404 });
+  }
+
+  const superAdminId = await getSuperAdminId();
+  const isProtectedSuperAdmin = Boolean(superAdminId && previousUser.id === superAdminId);
+
+  if (isProtectedSuperAdmin && (body.role !== undefined || body.is_active !== undefined || body.email !== undefined)) {
+    return NextResponse.json({ error: "Super admin access cannot be changed from the users list." }, { status: 400 });
+  }
 
   const updates: Record<string, unknown> = {};
   if (body.role && ["admin", "user"].includes(body.role)) {
@@ -260,6 +278,34 @@ export async function DELETE(request: NextRequest) {
     .select("*")
     .eq("id", body.user_id)
     .single();
+
+  if (!previousUser) {
+    return NextResponse.json({ error: "User not found." }, { status: 404 });
+  }
+
+  if (await isSuperAdminProfile(previousUser)) {
+    return NextResponse.json({ error: "Super admin cannot be deleted." }, { status: 400 });
+  }
+
+  const { error: subscriptionTransferError } = await supabase
+    .from("subscriptions")
+    .update({ user_id: userId })
+    .eq("user_id", body.user_id);
+
+  if (subscriptionTransferError) {
+    console.error("Error transferring user subscriptions:", subscriptionTransferError);
+    return NextResponse.json({ error: "Failed to preserve linked subscriptions." }, { status: 500 });
+  }
+
+  const { error: auditTransferError } = await supabase
+    .from("audit_logs")
+    .update({ user_id: userId })
+    .eq("user_id", body.user_id);
+
+  if (auditTransferError) {
+    console.error("Error transferring user audit logs:", auditTransferError);
+    return NextResponse.json({ error: "Failed to prepare user for deletion." }, { status: 500 });
+  }
 
   const { error } = await supabase.auth.admin.deleteUser(body.user_id);
   if (error) {

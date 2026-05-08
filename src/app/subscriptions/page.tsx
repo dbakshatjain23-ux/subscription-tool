@@ -31,14 +31,15 @@ export default async function SubscriptionsPage() {
       headerActions={<SubscriptionCreateModalButton />}
       isAdmin={isAdmin}
     >
-      <section className="grid gap-4 sm:grid-cols-3">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Total subscriptions" value={String(subscriptions.length)} />
         <MetricCard label="Active subscriptions" value={String(subscriptions.filter((item) => item.status === "active").length)} />
         <MetricCard label="Renewing soon" value={String(countRenewingSoon(subscriptions))} />
+        <MetricCard label="Unpaid or due" value={String(subscriptions.filter((item) => item.paymentStatus === "unpaid" || item.paymentStatus === "due").length)} />
       </section>
 
       <div className="mt-6">
-        <SubscriptionTable subscriptions={subscriptions} />
+        <SubscriptionTable subscriptions={subscriptions} canManageRenewals={isAdmin} />
       </div>
     </AppShell>
   );

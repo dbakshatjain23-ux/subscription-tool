@@ -1,9 +1,11 @@
 import type { Subscription } from "@/lib/types";
 
-function addBillingCycle(date: Date, billingCycle: Subscription["billingCycle"]) {
+export function addBillingCycle(date: Date, billingCycle: Subscription["billingCycle"]) {
   const next = new Date(date);
   if (billingCycle === "yearly") {
     next.setFullYear(next.getFullYear() + 1);
+  } else if (billingCycle === "quarterly") {
+    next.setMonth(next.getMonth() + 3);
   } else {
     next.setMonth(next.getMonth() + 1);
   }
@@ -12,6 +14,24 @@ function addBillingCycle(date: Date, billingCycle: Subscription["billingCycle"])
 
 function toDateOnly(value: Date) {
   return value.toISOString().slice(0, 10);
+}
+
+export function getNextRenewalAfter(renewalDate: string, billingCycle: Subscription["billingCycle"], afterDate = new Date()) {
+  const parsed = new Date(`${renewalDate}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return renewalDate;
+  }
+
+  const limit = new Date(afterDate);
+  limit.setHours(0, 0, 0, 0);
+  parsed.setHours(0, 0, 0, 0);
+
+  let nextRenewal = parsed;
+  do {
+    nextRenewal = addBillingCycle(nextRenewal, billingCycle);
+  } while (nextRenewal <= limit);
+
+  return toDateOnly(nextRenewal);
 }
 
 export function getNextRenewalDate(subscription: Pick<Subscription, "billingCycle" | "renewalDate" | "status">) {
@@ -56,11 +76,27 @@ export function countRenewingSoon(subscriptions: Subscription[], days = 7) {
 }
 
 export function toMonthlyCost(subscription: Subscription) {
-  return subscription.billingCycle === "yearly" ? subscription.cost / 12 : subscription.cost;
+  if (subscription.billingCycle === "yearly") {
+    return subscription.cost / 12;
+  }
+
+  if (subscription.billingCycle === "quarterly") {
+    return subscription.cost / 3;
+  }
+
+  return subscription.cost;
 }
 
 export function toAnnualCost(subscription: Subscription) {
-  return subscription.billingCycle === "monthly" ? subscription.cost * 12 : subscription.cost;
+  if (subscription.billingCycle === "monthly") {
+    return subscription.cost * 12;
+  }
+
+  if (subscription.billingCycle === "quarterly") {
+    return subscription.cost * 4;
+  }
+
+  return subscription.cost;
 }
 
 export function formatCurrency(value: number) {

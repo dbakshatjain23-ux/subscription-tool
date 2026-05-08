@@ -120,7 +120,12 @@ Important rules:
 - Currency is shown in rupees across the app.
 - Renewal date cannot be in the past.
 - Monthly subscriptions renew every month from the selected renewal date until cancelled.
+- Quarterly subscriptions renew every three months from the selected renewal date until cancelled.
 - Yearly subscriptions renew every year from the selected renewal date until cancelled.
+- Renewal cycles stay open for the configured grace period, which defaults to 7 days.
+- After the grace period, auto-renewed subscriptions are marked paid by the scheduled renewal processor.
+- During the current cycle review window, super admins can mark a renewal paid, mark it unpaid, skip it, cancel the subscription, or move it to the next renewal.
+- The grace period can be changed in Settings, including a never-expire option.
 - Cancelled or inactive subscriptions should not be treated as active upcoming renewals.
 
 The owner dropdown includes:
@@ -338,4 +343,3 @@ If export output looks incomplete:
 - Prefer editing subscriptions over deleting them unless the record is truly not needed.
 - Review Insights before renewals to identify unnecessary spend.
 - Keep user access updated when employees join, leave, or change teams.
-

@@ -66,7 +66,7 @@ npm run dev
 2. [ ] Fill in subscription form:
    - [ ] Name: e.g., "Netflix"
    - [ ] Cost: e.g., "15.99"
-   - [ ] Billing Cycle: Select "Monthly" or "Yearly"
+   - [ ] Billing Cycle: Select "Monthly", "Quarterly", or "Yearly"
    - [ ] Renewal Date: Pick a date
    - [ ] Team: e.g., "Entertainment"
    - [ ] Owner: e.g., "John Doe"

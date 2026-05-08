@@ -7,6 +7,7 @@ import { SubscriptionCreateModalButton } from "@/components/subscription-create-
 import { SubscriptionTable } from "@/components/subscription-table";
 import { UserCreateModalButton } from "@/components/user-create-modal-button";
 import { getSessionCookieName, getSessionUserIdFromCookieValue, verifySessionCookieValue } from "@/lib/auth";
+import { billingCycleOptions } from "@/lib/billing-cycles";
 import { readSubscriptionsForUser, readUsersSummary } from "@/lib/data";
 import { countRenewingSoon, formatCurrency, sortSubscriptionsByRenewalDate, toAnnualCost, toMonthlyCost } from "@/lib/subscription-helpers";
 import { verifyAdminPermission } from "@/lib/permissions";
@@ -150,13 +151,13 @@ export default async function DashboardPage() {
           )}
         </InsightCard>
 
-        <InsightCard title="Billing mix" description="Monthly vs yearly plans.">
+        <InsightCard title="Billing mix" description="Active plans by billing cycle.">
           <BillingMixChart mix={billingMix} totalAnnualSpend={totalAnnualSpend} />
         </InsightCard>
       </section>
 
       <div className="mt-8">
-        <SubscriptionTable subscriptions={subscriptions} />
+        <SubscriptionTable subscriptions={subscriptions} canManageRenewals={isAdmin} />
       </div>
     </AppShell>
   );
@@ -241,20 +242,25 @@ function StackedBar({
 }
 
 function buildBillingMix(subscriptions: Subscription[]) {
-  const monthly = subscriptions.filter((item) => item.billingCycle === "monthly");
-  const yearly = subscriptions.filter((item) => item.billingCycle === "yearly");
   const total = subscriptions.length || 1;
 
-  return {
-    monthlyCount: monthly.length,
-    yearlyCount: yearly.length,
-    monthlyPercent: (monthly.length / total) * 100,
-    yearlyPercent: (yearly.length / total) * 100,
-  };
+  return billingCycleOptions.map((option) => {
+    const count = subscriptions.filter((item) => item.billingCycle === option.value).length;
+    return {
+      ...option,
+      count,
+      percent: (count / total) * 100,
+    };
+  });
 }
 
 function BillingMixChart({ mix, totalAnnualSpend }: { mix: ReturnType<typeof buildBillingMix>; totalAnnualSpend: number }) {
-  const totalPlans = mix.monthlyCount + mix.yearlyCount;
+  const totalPlans = mix.reduce((total, item) => total + item.count, 0);
+  const colors = ["#0284c7", "#0f766e", "#7c3aed"];
+  const segments = mix.reduce<{ start: number; segments: string[] }>((current, item, index) => {
+    const segment = `${colors[index % colors.length]} ${current.start}% ${current.start + item.percent}%`;
+    return { start: current.start + item.percent, segments: [...current.segments, segment] };
+  }, { start: 0, segments: [] }).segments;
 
   return (
     <div className="space-y-4">
@@ -268,7 +274,7 @@ function BillingMixChart({ mix, totalAnnualSpend }: { mix: ReturnType<typeof bui
           <div
             className="h-28 w-28 rounded-full"
             style={{
-              background: `conic-gradient(#0284c7 0% ${mix.monthlyPercent}%, #7c3aed ${mix.monthlyPercent}% 100%)`,
+              background: totalPlans ? `conic-gradient(${segments.join(",")})` : "#e2e8f0",
             }}
           />
           <div className="absolute inset-4 rounded-full bg-white" />
@@ -278,32 +284,22 @@ function BillingMixChart({ mix, totalAnnualSpend }: { mix: ReturnType<typeof bui
           </div>
           </div>
           <div className="flex-1 space-y-3">
-            <div className="flex items-center justify-between text-sm text-slate-700">
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-sky-600" />
-                <span>Monthly</span>
+            {mix.map((item, index) => (
+              <div key={item.value} className="flex items-center justify-between text-sm text-slate-700">
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} />
+                  <span>{item.label}</span>
+                </div>
+                <span className="font-medium text-slate-900">
+                  {item.count} <span className="text-xs font-normal text-slate-500">({Math.round(item.percent)}%)</span>
+                </span>
               </div>
-              <span className="font-medium text-slate-900">{mix.monthlyCount}</span>
-            </div>
-            <div className="flex items-center justify-between text-sm text-slate-700">
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-violet-600" />
-                <span>Yearly</span>
-              </div>
-              <span className="font-medium text-slate-900">{mix.yearlyCount}</span>
-            </div>
-            <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>Monthly share</span>
-              <span>{Math.round(mix.monthlyPercent)}%</span>
-            </div>
-            <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>Yearly share</span>
-              <span>{Math.round(mix.yearlyPercent)}%</span>
-            </div>
+            ))}
           </div>
         </div>
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
-          <span className="font-semibold text-slate-700">{totalPlans}</span> total plans · {mix.monthlyCount} monthly · {mix.yearlyCount} yearly
+          <span className="font-semibold text-slate-700">{totalPlans}</span> total plans
+          {mix.map((item) => `, ${item.count} ${item.label.toLowerCase()}`)}
         </div>
       </div>
     </div>

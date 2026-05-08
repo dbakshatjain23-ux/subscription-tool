@@ -1,7 +1,8 @@
 import crypto from "node:crypto";
 import { getCacheKey, withCache } from "@/lib/cache";
 import { getSupabaseAdminClient } from "@/lib/supabase";
-import { getNextRenewalDate } from "@/lib/subscription-helpers";
+import { isBillingCycle } from "@/lib/billing-cycles";
+import { isPaymentStatus } from "@/lib/payment-statuses";
 import type { Subscription, SubscriptionInput } from "@/lib/types";
 
 export async function readSubscriptions() {
@@ -102,7 +103,7 @@ export async function readUsersSummary(): Promise<UsersSummary | null> {
 }
 
 export function mapDbSubscription(row: any): Subscription {
-  const subscription = {
+  return {
     id: row.id,
     name: row.name,
     cost: Number(row.cost),
@@ -110,14 +111,13 @@ export function mapDbSubscription(row: any): Subscription {
     renewalDate: row.renewaldate ?? row.renewalDate,
     team: row.team,
     owner: row.owner,
-    ownerUserId: row.user_id,
+    ownerUserId: row.user_id ?? undefined,
     status: (row.status ?? "active") as Subscription["status"],
+    paymentStatus: (row.payment_status ?? row.paymentStatus ?? "paid") as Subscription["paymentStatus"],
+    autoRenew: row.auto_renew ?? row.autoRenew ?? true,
+    lastPaidAt: row.last_paid_at ?? row.lastPaidAt ?? null,
+    lastRenewedAt: row.last_renewed_at ?? row.lastRenewedAt ?? null,
     notes: row.notes ?? "",
-  };
-
-  return {
-    ...subscription,
-    renewalDate: getNextRenewalDate(subscription),
   };
 }
 
@@ -130,6 +130,8 @@ export function toDbSubscriptionInput(input: SubscriptionInput) {
     team: input.team,
     owner: input.owner,
     status: input.status,
+    payment_status: input.paymentStatus ?? "paid",
+    auto_renew: input.autoRenew ?? true,
     notes: input.notes,
   };
 }
@@ -194,6 +196,7 @@ export function validateSubscriptionInput(input: Partial<SubscriptionInput>) {
   const team = String(input.team ?? "").trim();
   const owner = String(input.owner ?? "").trim();
   const status = String(input.status ?? "").trim().toLowerCase();
+  const paymentStatus = String(input.paymentStatus ?? "paid").trim().toLowerCase();
   const notes = String(input.notes ?? "").trim();
 
   if (!name || !team || !owner || !billingCycle || !status || !renewalDate) {
@@ -208,12 +211,16 @@ export function validateSubscriptionInput(input: Partial<SubscriptionInput>) {
     return { ok: false as const, error: "Cost cannot be negative. Enter zero or a positive amount." };
   }
 
-  if (billingCycle !== "monthly" && billingCycle !== "yearly") {
-    return { ok: false as const, error: "Billing cycle must be monthly or yearly." };
+  if (!isBillingCycle(billingCycle)) {
+    return { ok: false as const, error: "Billing cycle must be monthly, quarterly, or yearly." };
   }
 
   if (status !== "active" && status !== "cancelled") {
     return { ok: false as const, error: "Status must be active or cancelled." };
+  }
+
+  if (!isPaymentStatus(paymentStatus)) {
+    return { ok: false as const, error: "Payment status must be paid, due, unpaid, or skipped." };
   }
 
   const renewalDateCheck = validateRenewalDate(renewalDate);
@@ -227,11 +234,13 @@ export function validateSubscriptionInput(input: Partial<SubscriptionInput>) {
       id: crypto.randomUUID(),
       name,
       cost,
-      billingCycle: billingCycle as Subscription["billingCycle"],
+      billingCycle,
       renewalDate: renewalDateCheck.value,
       team,
       owner,
       status: status as Subscription["status"],
+      paymentStatus,
+      autoRenew: input.autoRenew ?? true,
       notes,
     },
   };

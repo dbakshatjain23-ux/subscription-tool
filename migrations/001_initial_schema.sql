@@ -17,10 +17,10 @@ CREATE TABLE IF NOT EXISTS profiles (
 -- Subscriptions table
 CREATE TABLE IF NOT EXISTS subscriptions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   name TEXT NOT NULL,
   cost NUMERIC NOT NULL CHECK (cost >= 0),
-  billingCycle TEXT NOT NULL CHECK (billingCycle IN ('monthly', 'yearly')),
+  billingCycle TEXT NOT NULL CHECK (billingCycle IN ('monthly', 'quarterly', 'yearly')),
   renewalDate DATE NOT NULL,
   team TEXT NOT NULL,
   owner TEXT NOT NULL,
@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 -- Audit logs table to track all changes
 CREATE TABLE IF NOT EXISTS audit_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES auth.users(id),
+  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   action TEXT NOT NULL CHECK (action IN ('CREATE', 'UPDATE', 'DELETE', 'LOGIN', 'LOGOUT', 'USER_CREATED')),
   resource_type TEXT NOT NULL,
   resource_id UUID,
@@ -153,6 +153,8 @@ BEGIN
     -- Reset renewal date based on billing cycle
     IF NEW.billingCycle = 'monthly' THEN
       NEW.renewalDate = CURRENT_DATE + INTERVAL '1 month';
+    ELSIF NEW.billingCycle = 'quarterly' THEN
+      NEW.renewalDate = CURRENT_DATE + INTERVAL '3 months';
     ELSE
       NEW.renewalDate = CURRENT_DATE + INTERVAL '1 year';
     END IF;

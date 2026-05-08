@@ -102,9 +102,10 @@ Open http://localhost:3000 and log in with your Supabase credentials.
 **Subscriptions Table** - Core subscription data:
 - `id` (UUID, primary key)
 - `user_id` (UUID, FK to profiles)
-- `name`, `cost`, `billingCycle` (monthly|yearly), `renewalDate`
-- `team`, `owner`, `status` (active|cancelled), `notes`
-- `auto_renewed` (boolean), `last_renewed_at` (timestamp)
+- `name`, `cost`, `billingCycle` (monthly|quarterly|yearly), `renewalDate`
+- `team`, `owner`, `status` (active|cancelled), `payment_status` (paid|due|unpaid|skipped), `notes`
+- `auto_renew` (boolean), `last_paid_at` (timestamp), `last_renewed_at` (timestamp)
+- `subscription_renewal_events` stores paid, due, unpaid, skipped, and cancelled renewal cycles
 
 **Audit Logs** - Complete change history:
 - Logs all CREATE/UPDATE/DELETE on subscriptions
@@ -125,11 +126,24 @@ All tables have RLS policies enabled:
 
 ### Auto-Renewal Trigger
 
-PostgreSQL trigger `handle_subscription_renewal()` fires on subscriptions queries:
-- If `renewalDate` is in the past and `status` = active:
+Scheduled PostgreSQL function `process_due_subscription_renewals()` handles renewals:
+- If `renewalDate` is due, `status` = active, and the cycle is inside the grace period:
+  - Create a due renewal event
+  - Set `payment_status = due`
+  - Keep the current renewal date open for admin review
+- If `renewalDate` is due, `status` = active, `auto_renew` = true, and the grace period has expired:
+  - Create a paid renewal event
   - Monthly subscriptions: advance renewalDate by 1 month
+  - Quarterly subscriptions: advance renewalDate by 3 months
   - Yearly subscriptions: advance renewalDate by 1 year
-  - Set `auto_renewed = true` and `last_renewed_at = now()`
+  - Set `payment_status = paid`, `last_paid_at = now()`, and `last_renewed_at = now()`
+- If `auto_renew` = false:
+  - Create a due renewal event
+  - Set `payment_status = due`
+  - Keep the renewal date for admin review
+- Grace defaults to 7 days and can be changed in Settings, including `never` to keep current-cycle payment edits open indefinitely.
+
+See `RENEWAL_SETUP.md` for the Supabase cron setup.
 
 ### Caching Layer
 
